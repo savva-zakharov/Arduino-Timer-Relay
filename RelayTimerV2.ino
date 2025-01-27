@@ -23,16 +23,22 @@ int seconds = 0;
 int tenths = 0;
 int secondsCurrent = 0;
 int tenthsCurrent = 0;
-int tMax = 0;
+int tMax1 = 0;
+int tMax2 = 0;
+int tMax3 = 0;
+int timer = 0;
 int tCur = 0;
+int tTar = 0;
 bool running = false;
 
 // Previous button states for debouncing
 bool prevSecondsUp = false, prevSecondsDown = false, prevTenthsUp = false, prevTenthsDown = false, prevStart = false;
 
+
+
 void setup() {
-  lcd.init(); // Initialize the LCD
-  lcd.backlight(); // Turn on the backlight
+  lcd.init();       // Initialize the LCD
+  lcd.backlight();  // Turn on the backlight
 
   // Configure button pins
   pinMode(buttonSecondsUp, INPUT_PULLUP);
@@ -49,13 +55,22 @@ void setup() {
 
   // Display instructions
   lcd.setCursor(0, 0);
-  lcd.print("Set Timer: ");
+  lcd.print(" Set Timer: ");
 }
+
+
 
 void loop() {
   // Check buttons and update timer values
   handleButtonPress();
 
+  if (timer ==  0) {
+    tTar = tMax1;
+  } else if (timer == 1) {
+    tTar = tMax2;
+  } else {
+    tTar = tMax3;
+  }
 
 
 
@@ -64,29 +79,49 @@ void loop() {
 
     countdown();
   } else {
-
   }
-
 }
+
+
 
 void updateTCur() {
 
-  lcd.setCursor(0, 1);
-  lcd.print("tCur: ");
-  lcd.print(secondsCurrent);
-  lcd.print(".");
-  lcd.print(tenthsCurrent);
-  lcd.print("s  ");
+  lcd.setCursor(8, 1);
+  lcd.print("  C:");
+  lcd.print(tCur / 10);
+  lcd.print("");
+}
 
-}
+
+
 void updateTMax() {
-  lcd.setCursor(0, 0);
-  lcd.print("tMax: ");
-  lcd.print(seconds);
-  lcd.print(".");
-  lcd.print(tenths);
-  lcd.print("s  ");
+  lcd.setCursor(1, 0);
+  lcd.print("t1:    ");
+  lcd.setCursor(4, 0);
+  // int tMaxU = tMax1 / 10;
+  // int tMaxT = tMax1 - tMaxU * 10;
+  lcd.print(tMax1/10);
+  // lcd.print(".");
+  // lcd.print(tMaxT);
+  //  lcd.print("s  ");
+  lcd.setCursor(9, 0);
+  lcd.print("t2:    ");
+  lcd.setCursor(12, 0);
+  // tMaxU = tMax2 / 10;
+  // tMaxT = tMax2 - tMaxU * 10;
+  lcd.print(tMax2/10);
+  // lcd.print(".");
+  // lcd.print(tMaxT);
+  lcd.setCursor(1, 1);
+  lcd.print("t3:    ");
+  lcd.setCursor(4, 1);
+  // tMaxU = tMax3 / 10;
+  // tMaxT = tMax3 - tMaxU * 10;
+  lcd.print(tMax3/10);
 }
+
+
+
 
 void handleButtonPress() {
   // Read button states
@@ -98,40 +133,85 @@ void handleButtonPress() {
 
   // Adjust seconds
   if (secondsUp && !prevSecondsUp) {
-    seconds = (seconds + 1) % 100; // Max 99 seconds
+    if (timer == 0) {
+    tMax1 = (tMax1 + 10) % 1000;  // Max 99 seconds
+    } else if (timer == 1) {
+    tMax2 = (tMax2 + 10) % 1000;      
+    } else {
+        tMax3 = (tMax3 + 10) % 1000;  
+    }
     updateTMax();
   }
   if (secondsDown && !prevSecondsDown) {
-    seconds = (seconds > 0) ? seconds - 1 : 0;
-
+    if (timer == 0) {
+    tMax1 = (tMax1 > 9) ? tMax1 - 10 : 0;
+    } else if (timer == 1) {
+     tMax2 = (tMax2 > 9) ? tMax2 - 10 : 0;     
+    } else {
+      tMax3 = (tMax3 > 9) ? tMax3 - 10 : 0;     
+    }
     updateTMax();
+  }
+
+  //switch timer
+  if (tenthsUp && !prevTenthsUp) {
+    timer++;
+    if (timer > 2) {
+      timer = 0;
+    }
+
+    if (timer == 0) {
+      lcd.setCursor(0, 0);
+      lcd.print("*");
+      lcd.setCursor(8, 0);
+      lcd.print(" ");
+      lcd.setCursor(0, 1);
+      lcd.print(" ");
+      
+
+    } else if (timer == 1) {
+      lcd.setCursor(0, 0);
+      lcd.print(" ");
+      lcd.setCursor(8, 0);
+      lcd.print("*");
+      lcd.setCursor(0, 1);
+      lcd.print(" ");
+    } else {
+      lcd.setCursor(0, 0);
+      lcd.print(" ");
+      lcd.setCursor(8, 0);
+      lcd.print(" ");
+      lcd.setCursor(0, 1);
+      lcd.print("*");
+    }
   }
 
   // Adjust tenths
-  if (tenthsUp && !prevTenthsUp) {
-    tenths = (tenths + 1) % 10; // Max 9 tenths
+  // if (tenthsUp && !prevTenthsUp) {
+  //   tMax1 = (tMax1 + 1);
 
-    updateTMax();
-  }
-  if (tenthsDown && !prevTenthsDown) {
-    tenths = (tenths > 0) ? tenths - 1 : 0;
+  //   updateTMax();
+  // }
+  // if (tenthsDown && !prevTenthsDown) {
+  //   if (timer == 0) {
+  //   tMax1 = (tMax1 > 0) ? tMax1 - 1 : 0;
+  //   } else if (timer == 1) {
+  //   tMax1 = (tMax2 > 0) ? tMax2 - 1 : 0; 
+  //   } else {
+  //   tMax1 = (tMax3 > 0) ? tMax3 - 1 : 0;  
+  //   }
 
-    updateTMax();
-  }
+  //   updateTMax();
+  // }
 
   // Start the timer
-  if (start && !prevStart && (seconds > 0 || tenths > 0)) {
+  if (start && !prevStart && (tTar > 0)) {
 
     //turn on the relays
     digitalWrite(relay1pin, LOW);
     digitalWrite(relay2pin, LOW);
 
-    tMax = seconds * 10 + tenths;
     tCur = 0;
-
-    //reset the current time
-    secondsCurrent = 0;
-    tenthsCurrent = 0;
 
     //start the timer
     if (running == false) {
@@ -139,14 +219,12 @@ void handleButtonPress() {
     } else {
       running = false;
 
-      secondsCurrent = 0;
-      tenthsCurrent = 0;
+
       tCur = 0;
       digitalWrite(relay1pin, HIGH);
       digitalWrite(relay2pin, HIGH);
       lcd.setCursor(0, 1);
       lcd.print("Timer Stopped");
-
     }
   }
 
@@ -158,21 +236,17 @@ void handleButtonPress() {
   prevStart = start;
 }
 
+
+
 void countdown() {
-  delay(80); // Wait for 0.1 seconds (1/10 of a second)
+  delay(80);  // Wait for 0.1 seconds (1/10 of a second)
 
   // Increase tenths and adjust seconds if needed
-  if (tCur < tMax) {
+  if (tCur < tTar) {
 
     tCur++;
 
-    if (tenthsCurrent < 9) {
-      tenthsCurrent++;
 
-    } else {
-      secondsCurrent++;
-      tenthsCurrent = 0;
-    }
 
     updateTCur();
 
@@ -184,11 +258,8 @@ void countdown() {
 
     running = false;
 
-    //reset the current time
-    secondsCurrent = 0;
-    tenthsCurrent = 0;
-    lcd.setCursor(0, 1);
-    lcd.print("Time's Up!     ");
+    tCur = 0;
+    lcd.setCursor(8, 1);
+    lcd.print("Done!");
   }
 }
-
