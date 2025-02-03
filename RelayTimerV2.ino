@@ -1,6 +1,10 @@
+#include <arduino-timer.h>
+
 #include <LiquidCrystal_I2C.h>
 
 #include <Wire.h>
+
+auto timer = timer_create_default();
 
 // Initialize the LCD, I2C address 0x3F, 16 columns, 2 rows
 LiquidCrystal_I2C lcd(0x3F, 16, 2);
@@ -8,33 +12,39 @@ LiquidCrystal_I2C lcd(0x3F, 16, 2);
 // Button pins
 const int buttonSecondsUp = 2;
 const int buttonSecondsDown = 3;
-const int buttonTenthsUp = 4;
-const int buttonTenthsDown = 5;
+const int pinSwitchDown = 4;
+const int pinSwitchUp = 5;
 const int startButton = 6;
+const int analogPin = A3;
 
 // Output pins
 
 const int relay1pin = 7;
 const int relay2pin = 8;
 
+// Mode vals
 
-// Timer variables
-int seconds = 0;
-int tenths = 0;
-int secondsCurrent = 0;
-int tenthsCurrent = 0;
-int tMax1 = 0;
-int tMax2 = 0;
-int tMax3 = 0;
-int timer = 0;
-int tCur = 0;
-int tTar = 0;
-bool running = false;
+byte mode = 0, prevMode = 0;
+
+int valSmooth = 0;
+
+bool exposureRunning = false;
+
+byte switchState = 0, prevSwitchState = 0;
+
+unsigned long modeState[9] = { 20, 0, 0, 0, 0, 0, 0, 0, 0 };
+int exposureStartTime = 0;
+
+int stepScale = 1000;
+int stepScaleList[5] = { 1, 10, 100, 1000, 10000 };
+
+int prevDistance = 20;
 
 // Previous button states for debouncing
-bool prevSecondsUp = false, prevSecondsDown = false, prevTenthsUp = false, prevTenthsDown = false, prevStart = false;
-
-
+bool prevSecondsUp = false, prevSecondsDown = false, prevSwitchDown = false, prevSwitchUp = false, prevStart = false;
+unsigned long lastSecondsUp = 0, lastSecondsDown = 0, lastStart = 0;
+const int debounceTime = 200;
+bool click = false;
 
 void setup() {
   lcd.init();       // Initialize the LCD
@@ -43,223 +53,230 @@ void setup() {
   // Configure button pins
   pinMode(buttonSecondsUp, INPUT_PULLUP);
   pinMode(buttonSecondsDown, INPUT_PULLUP);
-  pinMode(buttonTenthsUp, INPUT_PULLUP);
-  pinMode(buttonTenthsDown, INPUT_PULLUP);
+  pinMode(pinSwitchDown, INPUT_PULLUP);
+  pinMode(pinSwitchUp, INPUT_PULLUP);
   pinMode(startButton, INPUT_PULLUP);
   pinMode(relay1pin, OUTPUT);
   pinMode(relay2pin, OUTPUT);
 
-
   digitalWrite(relay1pin, HIGH);
   digitalWrite(relay2pin, HIGH);
 
+  Serial.begin(9600);  //  setup serial
   // Display instructions
+  lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print(" Set Timer: ");
+  lcd.print("mode");
 }
-
-
 
 void loop() {
-  // Check buttons and update timer values
+  timer.tick();
+  readMode();
   handleButtonPress();
+}
 
-  if (timer ==  0) {
-    tTar = tMax1;
-  } else if (timer == 1) {
-    tTar = tMax2;
-  } else {
-    tTar = tMax3;
+void readMode() {
+  int val = analogRead(analogPin);  // read the input pin
+
+  valSmooth = (valSmooth * (7) + val * 1) / 8;
+  mode = 8 - (valSmooth * 9 / 1024);
+  // mode = 8 - val * 9 / 1024;
+  if (mode != prevMode) {
+
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("mode");
+    lcd.setCursor(5, 0);
+    lcd.print(mode);
+
+    Serial.print("mode ");
+    Serial.println(mode);
+
+    //adjusting based on distance
+    if (mode == 0) {
+      prevDistance = modeState[mode];
+    }
+    if ((mode != 0) && (prevMode == 0)) {
+      float factor = modeState[0] * modeState[0] / prevDistance / prevDistance;
+      for (int i = 1; i < 7; i++) {
+        modeState[i] = modeState[i] * factor;
+      }
+      lcd.setCursor(0, 1);
+      lcd.print("Timings adjusted");
+    }
+
+    prevMode = mode;
+    updateModeState();
   }
 
+  if (mode == 0) {
 
+    lcd.setCursor(0, 1);
+    lcd.print("Prev ");
 
-  // Start the countdown if the timer is running
-  if (running) {
-
-    countdown();
-  } else {
+    lcd.setCursor(8, 1);
+    lcd.print(prevDistance);
+    lcd.print(" cm");
   }
 }
 
 
+void updateModeState() {
+  unsigned long value = modeState[mode];
+  if (mode > 0) {
+    lcd.setCursor(8, 0);
+    lcd.print(value / 1000);
+    lcd.print(".");
+    lcd.print(value / 100 % 10);
+    lcd.print("     ");
+  } else if (mode == 0) {
+    lcd.setCursor(8, 0);
+    lcd.print(value);
+    lcd.print(" cm     ");
+  }
+}
 
-void updateTCur() {
+void exposureStart() {
+  if ((mode > 0) && (mode<6)) {
+  digitalWrite(relay1pin, LOW);
+  }
+  exposureRunning = true;
+  exposureStartTime = millis();
 
+  // Serial.println("start");
+  // lcd.setCursor(0, 1);
+  // lcd.print("Start!        ");
+}
+
+void exposureStop() {
+  digitalWrite(relay1pin, HIGH);
+    digitalWrite(relay2pin, HIGH);
+  exposureRunning = false;
+  timer.cancel();
+  lcd.setCursor(0, 1);
+  lcd.print("Stoped! ");
+  // Serial.println("stop");
+}
+
+void exposureEnd() {
+  digitalWrite(relay1pin, HIGH);
+    digitalWrite(relay2pin, HIGH);
+  exposureRunning = false;
+  timer.cancel();
+  // int timeEllapsed = (millis() - exposureStartTime);
+  // Serial.println("stop");
+  lcd.setCursor(0, 1);
+  lcd.print("Done!  ");
+  // lcd.print(timeEllapsed);
+  lcd.print("      ");
+}
+
+void exposureRemaining() {
   lcd.setCursor(8, 1);
-  lcd.print("  C:");
-  lcd.print(tCur / 10);
-  lcd.print("");
+  int exposureRemainingTime = (millis() - exposureStartTime);
+  lcd.print(exposureRemainingTime / 1000);
+  lcd.print(".");
+  lcd.print(exposureRemainingTime / 100 % 10);
+  lcd.print("      ");
+  
+  // digitalWrite(relay2pin, click);
+  // click = !click;
 }
 
-
-
-void updateTMax() {
-  lcd.setCursor(1, 0);
-  lcd.print("t1:    ");
-  lcd.setCursor(4, 0);
-  // int tMaxU = tMax1 / 10;
-  // int tMaxT = tMax1 - tMaxU * 10;
-  lcd.print(tMax1/10);
-  // lcd.print(".");
-  // lcd.print(tMaxT);
-  //  lcd.print("s  ");
-  lcd.setCursor(9, 0);
-  lcd.print("t2:    ");
-  lcd.setCursor(12, 0);
-  // tMaxU = tMax2 / 10;
-  // tMaxT = tMax2 - tMaxU * 10;
-  lcd.print(tMax2/10);
-  // lcd.print(".");
-  // lcd.print(tMaxT);
-  lcd.setCursor(1, 1);
-  lcd.print("t3:    ");
-  lcd.setCursor(4, 1);
-  // tMaxU = tMax3 / 10;
-  // tMaxT = tMax3 - tMaxU * 10;
-  lcd.print(tMax3/10);
+void lcdTest() {
+  lcd.setCursor(0, 1);
+  lcd.print("Test");
 }
-
-
-
 
 void handleButtonPress() {
   // Read button states
   bool secondsUp = !digitalRead(buttonSecondsUp);
   bool secondsDown = !digitalRead(buttonSecondsDown);
-  bool tenthsUp = !digitalRead(buttonTenthsUp);
-  bool tenthsDown = !digitalRead(buttonTenthsDown);
+  bool switchDown = !digitalRead(pinSwitchDown);
+  bool switchUp = !digitalRead(pinSwitchUp);
   bool start = !digitalRead(startButton);
+  // int val = analogRead(analogPin);  // read the input pin
 
-  // Adjust seconds
-  if (secondsUp && !prevSecondsUp) {
-    if (timer == 0) {
-    tMax1 = (tMax1 + 10) % 1000;  // Max 99 seconds
-    } else if (timer == 1) {
-    tMax2 = (tMax2 + 10) % 1000;      
-    } else {
-        tMax3 = (tMax3 + 10) % 1000;  
-    }
-    updateTMax();
-  }
-  if (secondsDown && !prevSecondsDown) {
-    if (timer == 0) {
-    tMax1 = (tMax1 > 9) ? tMax1 - 10 : 0;
-    } else if (timer == 1) {
-     tMax2 = (tMax2 > 9) ? tMax2 - 10 : 0;     
-    } else {
-      tMax3 = (tMax3 > 9) ? tMax3 - 10 : 0;     
-    }
-    updateTMax();
-  }
-
-  //switch timer
-  if (tenthsUp && !prevTenthsUp) {
-    timer++;
-    if (timer > 2) {
-      timer = 0;
-    }
-
-    if (timer == 0) {
-      lcd.setCursor(0, 0);
-      lcd.print("*");
-      lcd.setCursor(8, 0);
-      lcd.print(" ");
-      lcd.setCursor(0, 1);
-      lcd.print(" ");
-      
-
-    } else if (timer == 1) {
-      lcd.setCursor(0, 0);
-      lcd.print(" ");
-      lcd.setCursor(8, 0);
-      lcd.print("*");
-      lcd.setCursor(0, 1);
-      lcd.print(" ");
-    } else {
-      lcd.setCursor(0, 0);
-      lcd.print(" ");
-      lcd.setCursor(8, 0);
-      lcd.print(" ");
-      lcd.setCursor(0, 1);
-      lcd.print("*");
-    }
-  }
-
-  // Adjust tenths
-  // if (tenthsUp && !prevTenthsUp) {
-  //   tMax1 = (tMax1 + 1);
-
-  //   updateTMax();
-  // }
-  // if (tenthsDown && !prevTenthsDown) {
-  //   if (timer == 0) {
-  //   tMax1 = (tMax1 > 0) ? tMax1 - 1 : 0;
-  //   } else if (timer == 1) {
-  //   tMax1 = (tMax2 > 0) ? tMax2 - 1 : 0; 
-  //   } else {
-  //   tMax1 = (tMax3 > 0) ? tMax3 - 1 : 0;  
-  //   }
-
-  //   updateTMax();
+  // valSmooth = (valSmooth * (3) + val * 1) / 4;
+  // mode = 8 - (valSmooth * 9 / 1024);
+  // if (mode != prevMode) {
+  //   // lcd.clear();
+  //   lcd.setCursor(0, 0);
+  //   lcd.print("mode ");
+  //   lcd.print(mode);
+  //   updateModeState();
+  //   prevMode = mode;
   // }
 
-  // Start the timer
-  if (start && !prevStart && (tTar > 0)) {
-
-    //turn on the relays
-    digitalWrite(relay1pin, LOW);
-    digitalWrite(relay2pin, LOW);
-
-    tCur = 0;
-
-    //start the timer
-    if (running == false) {
-      running = true;
-    } else {
-      running = false;
-
-
-      tCur = 0;
-      digitalWrite(relay1pin, HIGH);
-      digitalWrite(relay2pin, HIGH);
-      lcd.setCursor(0, 1);
-      lcd.print("Timer Stopped");
+  if (switchDown == true) {
+    switchState = 2;
+    if (mode == 0) {
+      switchState = 0;
+    }
+  }
+  if (switchUp == true) {
+    switchState = 4;
+    if (mode == 0) {
+      switchState = 2;
+    }
+  }
+  if ((switchDown == false) && (switchUp == false)) {
+    switchState = 3;
+    if (mode == 0) {
+      switchState = 1;
     }
   }
 
-  // Update previous button states
+
+
+  if (switchState != prevSwitchState) {
+    stepScale = stepScaleList[switchState];
+
+    // redundant debug code
+    // lcd.setCursor(14, 1);
+    // lcd.print(switchState);
+
+    prevSwitchState = switchState;
+  }
+
+
+  // changing the values
+
+  if ((secondsUp == true) && (secondsUp != prevSecondsUp) && ((millis() - lastSecondsUp) > debounceTime)) {
+    if (modeState[mode] < 100000000) {
+      modeState[mode] = modeState[mode] + stepScale;
+    }
+    updateModeState();
+    lastSecondsUp = millis();
+  }
+
+  if ((secondsDown == true) && (secondsDown != prevSecondsDown) && ((millis() - lastSecondsDown) > debounceTime)) {
+    if (modeState[mode] > stepScale) {
+      modeState[mode] = modeState[mode] - stepScale;
+    }
+    updateModeState();
+    lastSecondsDown = millis();
+  }
+
+  //starting the timer
+
+  if ((start == true) && (start != prevStart) && (modeState[mode] > 0) && ((millis() - lastStart) > debounceTime)) {
+    if (exposureRunning == false) {
+      exposureStart();
+      timer.in(modeState[mode], exposureEnd);
+      timer.every(200, exposureRemaining);
+      lastStart = millis();
+    } else {
+      timer.cancel();
+      exposureStop();
+      lastStart = millis();
+    }
+  }
+
+  //recordnign button states
+
   prevSecondsUp = secondsUp;
   prevSecondsDown = secondsDown;
-  prevTenthsUp = tenthsUp;
-  prevTenthsDown = tenthsDown;
+
   prevStart = start;
-}
-
-
-
-void countdown() {
-  delay(80);  // Wait for 0.1 seconds (1/10 of a second)
-
-  // Increase tenths and adjust seconds if needed
-  if (tCur < tTar) {
-
-    tCur++;
-
-
-
-    updateTCur();
-
-  } else {
-    // Timer ends
-    //turn off the relays
-    digitalWrite(relay1pin, HIGH);
-    digitalWrite(relay2pin, HIGH);
-
-    running = false;
-
-    tCur = 0;
-    lcd.setCursor(8, 1);
-    lcd.print("Done!");
-  }
 }
