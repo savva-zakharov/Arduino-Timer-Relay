@@ -30,10 +30,13 @@ int valSmooth = 0;
 
 bool exposureRunning = false;
 
+unsigned long exposureTimeTotal;
+
 byte switchState = 0, prevSwitchState = 0;
 
 unsigned long modeState[9] = { 20, 0, 0, 0, 0, 0, 0, 0, 0 };
-int exposureStartTime = 0;
+String modeLabel[9] = { "dist", "expo", "expo", "expo", "expo", "expo", "time", "time", "time" };
+long exposureStartTime = 0;
 
 int stepScale = 1000;
 int stepScaleList[5] = { 1, 10, 100, 1000, 10000 };
@@ -85,11 +88,11 @@ void readMode() {
 
     lcd.clear();
     lcd.setCursor(0, 0);
-    lcd.print("mode");
+    lcd.print(modeLabel[mode]);
     lcd.setCursor(5, 0);
     lcd.print(mode);
 
-    Serial.print("mode ");
+    Serial.print(modeLabel[mode]);
     Serial.println(mode);
 
     //adjusting based on distance
@@ -97,9 +100,10 @@ void readMode() {
       prevDistance = modeState[mode];
     }
     if ((mode != 0) && (prevMode == 0)) {
-      float factor = modeState[0] * modeState[0] / prevDistance / prevDistance;
+      //      float factor = modeState[0] * modeState[0] / prevDistance / prevDistance;
+      int newDistance = modeState[0];
       for (int i = 1; i < 7; i++) {
-        modeState[i] = modeState[i] * factor;
+        modeState[i] = modeState[i] * newDistance * newDistance / prevDistance / prevDistance;
       }
       lcd.setCursor(0, 1);
       lcd.print("Timings adjusted");
@@ -137,10 +141,14 @@ void updateModeState() {
 }
 
 void exposureStart() {
-  if ((mode > 0) && (mode<6)) {
-  digitalWrite(relay1pin, LOW);
+  if ((mode > 0) && (mode < 6)) {
+    digitalWrite(relay1pin, LOW);
+    lcd.setCursor(0, 1);
+    lcd.print("       ");
   }
   exposureRunning = true;
+
+  click = false;
   exposureStartTime = millis();
 
   // Serial.println("start");
@@ -150,7 +158,7 @@ void exposureStart() {
 
 void exposureStop() {
   digitalWrite(relay1pin, HIGH);
-    digitalWrite(relay2pin, HIGH);
+  digitalWrite(relay2pin, HIGH);
   exposureRunning = false;
   timer.cancel();
   lcd.setCursor(0, 1);
@@ -160,7 +168,7 @@ void exposureStop() {
 
 void exposureEnd() {
   digitalWrite(relay1pin, HIGH);
-    digitalWrite(relay2pin, HIGH);
+  digitalWrite(relay2pin, HIGH);
   exposureRunning = false;
   timer.cancel();
   // int timeEllapsed = (millis() - exposureStartTime);
@@ -169,18 +177,22 @@ void exposureEnd() {
   lcd.print("Done!  ");
   // lcd.print(timeEllapsed);
   lcd.print("      ");
+  click = false;
 }
 
 void exposureRemaining() {
   lcd.setCursor(8, 1);
-  int exposureRemainingTime = (millis() - exposureStartTime);
+  long exposureRemainingTime = (millis() - exposureStartTime);
   lcd.print(exposureRemainingTime / 1000);
   lcd.print(".");
   lcd.print(exposureRemainingTime / 100 % 10);
   lcd.print("      ");
-  
-  // digitalWrite(relay2pin, click);
-  // click = !click;
+
+  if ((exposureTimeTotal - exposureRemainingTime <= 5000) && (click == false) && ((mode > 5) && (mode < 9))) {
+    click = true;
+    digitalWrite(relay2pin, LOW);
+  }
+
 }
 
 void lcdTest() {
@@ -265,6 +277,7 @@ void handleButtonPress() {
       exposureStart();
       timer.in(modeState[mode], exposureEnd);
       timer.every(200, exposureRemaining);
+      exposureTimeTotal = modeState[mode];
       lastStart = millis();
     } else {
       timer.cancel();

@@ -1,14 +1,31 @@
 # Arduino-Timer-Relay
+
+Version 2.1
  
  Pins:
- 
-* Pin 2: Seconds up button
-* Pin 3: Seconds down button
-* Pin 4: Tenths seconds up button
-* Pin 5: Tenths seconds down button
+
+* Pin 2: Time up button
+* Pin 3: Time down button
+* Pin 4: Switch position down
+* Pin 5: Switch position up
 * Pin 6: start/stop the timer
 * Pin 7: Relay 1 control
 * Pin 8: Relay 2 control
 
+* Analog Pin A3: Rotary switch sensor
+
 * Pins SLC & SDA for lcd controller i2c
 ![image](https://github.com/user-attachments/assets/5bea1623-e98b-4dab-8cb5-91bbe9209297)
+
+Modes:
+
+* 0: Distance (cm)
+* 1: Exposure time (s)
+* 2: Exposure time (s)
+* 3: Exposure time (s)
+* 4: Exposure time (s)
+* 5: Exposure time (s)
+* 6: Exposure time (s)
+* 7: Total time (s)
+* 8: Total time (s)
+* 9: Total time (s)
