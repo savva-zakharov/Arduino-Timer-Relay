@@ -1,6 +1,6 @@
 # Arduino-Timer-Relay
 
-Version 2.1
+Version 2.2
  
  Pins:
 
@@ -20,7 +20,7 @@ Version 2.1
 Modes:
 
 * 0: Distance (cm)
-* 1: Exposure time (s)
+* 1: F-stop adjustment
 * 2: Exposure time (s)
 * 3: Exposure time (s)
 * 4: Exposure time (s)
