@@ -5,6 +5,10 @@
 #include <Wire.h>
 
 auto timer = timer_create_default();
+// Timer<10> timer;
+Timer<1, const char *> timer;
+Timer<1, const char *> timer_1;
+Timer<1, const char *> timer_2;
 
 // Initialize the LCD, I2C address 0x3F, 16 columns, 2 rows
 LiquidCrystal_I2C lcd(0x3F, 16, 2);
@@ -29,6 +33,8 @@ byte mode = 0, prevMode = 0;
 int valSmooth = 0;
 
 bool exposureRunning = false;
+bool timer1Running = false;
+bool timer2Running = false;
 
 unsigned long exposureTimeTotal;
 
@@ -90,9 +96,17 @@ void readMode() {
 
     lcd.clear();
     lcd.setCursor(0, 0);
-    lcd.print(modeLabel[mode]);
-    lcd.setCursor(5, 0);
-    lcd.print(mode);
+    if (mode < 8) {
+      lcd.print(modeLabel[mode]);
+      lcd.setCursor(5, 0);
+      lcd.print(mode);
+    } else if (mode = 8) {
+      lcd.print(modeState[5]);
+      lcd.setCursor(5, 0);
+      lcd.print(modeState[6]);
+      lcd.setCursor(10, 0);
+      lcd.print(modeState[7]);
+    }
 
     Serial.print(modeLabel[mode]);
     Serial.println(mode);
@@ -222,7 +236,7 @@ void exposureRemaining() {
   lcd.print(exposureRemainingTime / 100 % 10);
   lcd.print("      ");
 
-  if ((exposureTimeTotal - exposureRemainingTime <= 5000) && (click == false) && ((mode > 5) && (mode < 9))) {
+  if ((exposureTimeTotal - exposureRemainingTime <= 5000) && (click == false) && ((mode > 5) && (mode < 8))) {
     click = true;
     digitalWrite(relay2pin, LOW);
   }
@@ -286,7 +300,7 @@ void handleButtonPress() {
 
 
   // changing the values
-  if ((mode == 0) || (mode > 1)) {
+  if (mode == 0) {
     if ((secondsUp == true) && (secondsUp != prevSecondsUp) && ((millis() - lastSecondsUp) > debounceTime)) {
       if (modeState[mode] < 100000000) {
         modeState[mode] = modeState[mode] + stepScale;
@@ -301,8 +315,7 @@ void handleButtonPress() {
       updateModeState();
       lastSecondsDown = millis();
     }
-  }
-  if (mode == 1) {
+  } else if (mode == 1) {
     if ((secondsUp == true) && (secondsUp != prevSecondsUp) && ((millis() - lastSecondsUp) > debounceTime)) {
       if (modeState[mode] < 10) {
         modeState[mode] = modeState[mode] + 1;
@@ -316,6 +329,56 @@ void handleButtonPress() {
       }
       updateModeState();
       lastSecondsDown = millis();
+    }
+  } else if ((mode > 1) && (mode < 8)) {
+    if ((secondsUp == true) && (secondsUp != prevSecondsUp) && ((millis() - lastSecondsUp) > debounceTime)) {
+      if (modeState[mode] < 100000000) {
+        modeState[mode] = modeState[mode] + stepScale;
+      }
+      updateModeState();
+      lastSecondsUp = millis();
+    }
+    if ((secondsDown == true) && (secondsDown != prevSecondsDown) && ((millis() - lastSecondsDown) > debounceTime)) {
+      if (modeState[mode] > stepScale) {
+        modeState[mode] = modeState[mode] - stepScale;
+      }
+      updateModeState();
+      lastSecondsDown = millis();
+    }
+  } else if (mode == 8) {
+    //mode for running multiple timers
+
+
+    if ((start == true) && (start != prevStart) && (modeState[5] > 0) && ((millis() - lastStart) > debounceTime)) {
+      if (exposureRunning == false) {
+        exposureStart();
+        timer.in(modeState[5], exposureStop())
+        timer.every(200, exposureRemaining);
+        exposureTimeTotal = modeState[5];
+        lastStart = millis();
+      } else {
+        timer.cancel(exposure);
+        exposureStop();
+        lastStart = millis();
+      }
+    }
+    if ((secondsDown == true) && (secondsDown != prevSecondsDown) && (modeState[6] > 0) && ((millis() - lastSecondsDown) > debounceTime)) {
+      if (timer1Running == false) {
+        auto timer1 = timer.in(modeState[6], exposureEnd);
+        timer1Running = true;
+      } else {
+        timer.cancel(timer1);
+        timer1Running = false;
+      }
+    }
+    if ((secondsUp == true) && (secondsUp != prevSecondsUp) && (modeState[7] > 0) && ((millis() - lastSecondsUp) > debounceTime)) {
+      if (timer1Running == false) {
+        auto timer2 = timer.in(modeState[7], exposureEnd);
+        timer1Running = true;
+      } else {
+        timer.cancel(timer2);
+        timer1Running = false;
+      }
     }
   }
   //starting the timer
@@ -334,10 +397,9 @@ void handleButtonPress() {
     }
   }
 
-  //recordnign button states
+  //recording button states
 
   prevSecondsUp = secondsUp;
   prevSecondsDown = secondsDown;
-
   prevStart = start;
 }
