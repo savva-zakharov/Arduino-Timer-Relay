@@ -27,6 +27,9 @@ const int relay2pin = 8;
 // Mode vals
 
 byte mode = 0, prevMode = 0;
+byte potentialMode = 0;
+unsigned long modeStableStartTime = 0;
+const unsigned long MODE_STABILITY_DELAY = 50; // milliseconds
 
 int valSmooth = 0;
 
@@ -41,6 +44,8 @@ byte switchState = 0, prevSwitchState = 0;
 unsigned long modeState[9] = { 20, 6, 1000, 1000, 1000, 1000, 60000, 60000, 60000 };
 String modeLabel[9] = { "dist", "fstop", "expo", "expo", "expo", "expo", "time", "time", "time" };
 long exposureStartTime = 0;
+long timer1StartTime = 0;
+long timer2StartTime = 0;
 
 int stepScale = 1000;
 int stepScaleList[5] = { 1, 10, 100, 1000, 10000 };
@@ -54,6 +59,44 @@ bool prevSecondsUp = false, prevSecondsDown = false, prevSwitchDown = false, pre
 unsigned long lastSecondsUp = 0, lastSecondsDown = 0, lastStart = 0;
 const int debounceTime = 200;
 bool click = false;
+
+void timer1End() {
+  timer1Running = false;
+  timer_mode8_1.cancel();
+  lcd.setCursor(5, 1);
+  lcd.print("0   ");
+}
+
+bool updateTimer1(void *) {
+  if (!timer1Running) return false;
+  long elapsed = millis() - timer1StartTime;
+  long remaining = modeState[6] - elapsed;
+  if (remaining < 0) remaining = 0;
+  
+  lcd.setCursor(5, 1);
+  lcd.print(remaining / 1000);
+  lcd.print("   ");
+  return true;
+}
+
+void timer2End() {
+  timer2Running = false;
+  timer_mode8_2.cancel();
+  lcd.setCursor(10, 1);
+  lcd.print("0   ");
+}
+
+bool updateTimer2(void *) {
+  if (!timer2Running) return false;
+  long elapsed = millis() - timer2StartTime;
+  long remaining = modeState[7] - elapsed;
+  if (remaining < 0) remaining = 0;
+  
+  lcd.setCursor(10, 1);
+  lcd.print(remaining / 1000);
+  lcd.print("   ");
+  return true;
+}
 
 void setup() {
   lcd.init();       // Initialize the LCD
@@ -87,10 +130,26 @@ void loop() {
 }
 
 void readMode() {
-  int val = analogRead(analogPin);  // read the input pin
+  int val = analogRead(analogPin);  // read the input pin value
+  valSmooth = (valSmooth * 3 + val) / 4;
+  
+  byte calculatedMode = 8 - (valSmooth * 9 / 1024);
 
-  valSmooth = (valSmooth * (7) + val * 1) / 8;
-  mode = 8 - (valSmooth * 9 / 1024);
+  // Stability Check
+  if (calculatedMode != potentialMode) {
+    potentialMode = calculatedMode;
+    modeStableStartTime = millis();
+  }
+
+  // Only update actual 'mode' if potentialMode has been stable
+  if (millis() - modeStableStartTime > MODE_STABILITY_DELAY) {
+    mode = potentialMode;
+  }
+      Serial.print("raw: ");
+    Serial.print(val);
+    Serial.print("  smooth: ");
+    Serial.println(valSmooth);
+
   if (mode != prevMode) {
 
     lcd.clear();
@@ -100,15 +159,11 @@ void readMode() {
       lcd.setCursor(5, 0);
       lcd.print(mode);
     } else if (mode == 8) {
-      lcd.print(modeState[5]);
-      lcd.setCursor(5, 0);
-      lcd.print(modeState[6]);
-      lcd.setCursor(10, 0);
-      lcd.print(modeState[7]);
     }
 
-    Serial.print(modeLabel[mode]);
+    Serial.println(modeLabel[mode]);
     Serial.println(mode);
+
 
     //adjusting based on distance
     if (mode == 0) {
@@ -158,7 +213,7 @@ void readMode() {
 
 void updateModeState() {
   unsigned long value = modeState[mode];
-  if (mode > 1) {
+  if ((mode > 1) and (mode < 8)) {
     lcd.setCursor(8, 0);
     lcd.print(value / 1000);
     lcd.print(".");
@@ -172,11 +227,18 @@ void updateModeState() {
     lcd.setCursor(8, 0);
     lcd.print(fstopList[value]);
     lcd.print("      ");
+  } else if (mode == 8) {    
+      lcd.print(modeState[5] / 1000);
+      lcd.setCursor(5, 0);
+      lcd.print(modeState[6] / 1000);
+      lcd.setCursor(10, 0);
+      lcd.print(modeState[7] / 1000);
+
   }
 }
 
 void exposureStart() {
-  if ((mode > 0) && (mode < 6)) {
+  if (((mode > 1) && (mode < 6)) || mode == 8) {
     digitalWrite(relay1pin, LOW);
     lcd.setCursor(0, 1);
     lcd.print("       ");
@@ -193,7 +255,7 @@ void exposureStop() {
   exposureRunning = false;
   timer.cancel();
   lcd.setCursor(0, 1);
-  lcd.print("Stoped! ");
+  lcd.print("stop");
 }
 
 void exposureEnd() {
@@ -202,20 +264,24 @@ void exposureEnd() {
   exposureRunning = false;
   timer.cancel();
   lcd.setCursor(0, 1);
-  lcd.print("Done!  ");
+  lcd.print("Done!");
   lcd.print("      ");
   click = false;
 }
 
 void exposureRemaining() {
-  lcd.setCursor(8, 1);
-  long exposureRemainingTime = (millis() - exposureStartTime);
-  lcd.print(exposureRemainingTime / 1000);
+  lcd.setCursor(0, 1);
+  
+  long elapsed = millis() - exposureStartTime;
+  long remaining = exposureTimeTotal - elapsed;
+  if (remaining < 0) remaining = 0;
+
+  lcd.print(remaining / 1000);
   lcd.print(".");
-  lcd.print(exposureRemainingTime / 100 % 10);
+  lcd.print((remaining / 100) % 10);
   lcd.print("      ");
 
-  if ((exposureTimeTotal - exposureRemainingTime <= 5000) && (click == false) && ((mode > 5) && (mode < 8))) {
+  if ((remaining <= 5000) && (click == false) && ((mode > 5) && (mode < 8))) {
     click = true;
     digitalWrite(relay2pin, LOW);
   }
@@ -316,7 +382,7 @@ void handleButtonPress() {
         if (exposureRunning == false) {
           exposureStart();
           // Pass function pointer, do not call function
-          timer.in(modeState[5], [](void*) -> bool { exposureStop(); return false; });
+          timer.in(modeState[5], [](void*) -> bool { exposureEnd(); return false; });
           timer.every(200, [](void*) -> bool { exposureRemaining(); return true; });
           exposureTimeTotal = modeState[5];
           lastStart = millis();
@@ -328,31 +394,34 @@ void handleButtonPress() {
       }
       if ((secondsDown == true) && (secondsDown != prevSecondsDown) && (modeState[6] > 0) && ((millis() - lastSecondsDown) > debounceTime)) {
         if (timer1Running == false) {
+          timer1StartTime = millis();
           timer_mode8_1.in(modeState[6], [](void*) -> bool {
-             exposureEnd();
-             timer1Running = false;
+             timer1End();
              return false;
           });
+          timer_mode8_1.every(100, updateTimer1);
           timer1Running = true;
         } else {
-          timer_mode8_1.cancel();
-          timer1Running = false;
+          timer1End(); // Stop manually
         }
+        lastSecondsDown = millis();
       }
       if ((secondsUp == true) && (secondsUp != prevSecondsUp) && (modeState[7] > 0) && ((millis() - lastSecondsUp) > debounceTime)) {
         if (timer2Running == false) {
+          timer2StartTime = millis();
           timer_mode8_2.in(modeState[7], [](void*) -> bool {
-             exposureEnd();
-             timer2Running = false;
+             timer2End();
              return false;
           });
+          timer_mode8_2.every(100, updateTimer2);
           timer2Running = true;
         } else {
-          timer_mode8_2.cancel();
-          timer2Running = false;
+          timer2End(); // Stop manually
         }
+        lastSecondsUp = millis();
       }
     }  //starting the timer
+
   if (mode != 8) {
     if ((start == true) && (start != prevStart) && (modeState[mode] > 0) && ((millis() - lastStart) > debounceTime)) {
       if (exposureRunning == false) {

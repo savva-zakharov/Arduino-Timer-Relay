@@ -21,11 +21,10 @@ Modes:
 
 * 0: Distance (cm)
 * 1: F-stop adjustment
-* 2: Exposure time (s)
-* 3: Exposure time (s)
-* 4: Exposure time (s)
-* 5: Exposure time (s)
-* 6: Exposure time (s)
-* 7: Total time (s)
-* 8: Total time (s)
-* 9: Total time (s)
+* 2: Exposure timer (s)
+* 3: Exposure timer (s)
+* 4: Exposure timer (s)
+* 5: Exposure timer (s)
+* 6: Normal timer (s)
+* 7: Normal timer (s)
+* 8: Triple timer
