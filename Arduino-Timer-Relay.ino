@@ -5,10 +5,8 @@
 #include <Wire.h>
 
 auto timer = timer_create_default();
-// Timer<10> timer;
-Timer<1, const char *> timer;
-Timer<1, const char *> timer_1;
-Timer<1, const char *> timer_2;
+auto timer_mode8_1 = timer_create_default();
+auto timer_mode8_2 = timer_create_default();
 
 // Initialize the LCD, I2C address 0x3F, 16 columns, 2 rows
 LiquidCrystal_I2C lcd(0x3F, 16, 2);
@@ -82,6 +80,8 @@ void setup() {
 
 void loop() {
   timer.tick();
+  timer_mode8_1.tick();
+  timer_mode8_2.tick();
   readMode();
   handleButtonPress();
 }
@@ -91,7 +91,6 @@ void readMode() {
 
   valSmooth = (valSmooth * (7) + val * 1) / 8;
   mode = 8 - (valSmooth * 9 / 1024);
-  // mode = 8 - val * 9 / 1024;
   if (mode != prevMode) {
 
     lcd.clear();
@@ -100,7 +99,7 @@ void readMode() {
       lcd.print(modeLabel[mode]);
       lcd.setCursor(5, 0);
       lcd.print(mode);
-    } else if (mode = 8) {
+    } else if (mode == 8) {
       lcd.print(modeState[5]);
       lcd.setCursor(5, 0);
       lcd.print(modeState[6]);
@@ -116,15 +115,12 @@ void readMode() {
       prevDistance = modeState[mode];
     }
     if ((mode != 0) && (prevMode == 0)) {
-      //      float factor = modeState[0] * modeState[0] / prevDistance / prevDistance;
       int newDistance = modeState[0];
       if (newDistance != prevDistance) {
         for (int i = 2; i < 6; i++) {
           modeState[i] = modeState[i] * newDistance * newDistance / prevDistance / prevDistance;
         }
       }
-      // lcd.setCursor(0, 1);
-      // lcd.print("Timings adjusted");
     }
     if (mode == 0) {
       lcd.setCursor(0, 1);
@@ -148,13 +144,6 @@ void readMode() {
       if (deltaFstop != 0) {
         for (int i = 2; i < 6; i++) {
           modeState[i] *= pow(2, deltaFstop);
-
-          // modeState[i] = modeState[i] * factor;
-          // if (deltaFstop >= 0) {
-          //   modeState[i] <<= deltaFstop;  // multiply by 2^x
-          // } else {
-          //   modeState[i] >>= -deltaFstop;  // divide by 2^(-x)
-          // }
         }
         lcd.setCursor(0, 1);
         lcd.print("Timings adjusted");
@@ -181,8 +170,6 @@ void updateModeState() {
     lcd.print(" cm     ");
   } else if (mode == 1) {
     lcd.setCursor(8, 0);
-    // lcd.print(value);
-    // lcd.print(" ");
     lcd.print(fstopList[value]);
     lcd.print("      ");
   }
@@ -198,10 +185,6 @@ void exposureStart() {
 
   click = false;
   exposureStartTime = millis();
-
-  // Serial.println("start");
-  // lcd.setCursor(0, 1);
-  // lcd.print("Start!        ");
 }
 
 void exposureStop() {
@@ -211,7 +194,6 @@ void exposureStop() {
   timer.cancel();
   lcd.setCursor(0, 1);
   lcd.print("Stoped! ");
-  // Serial.println("stop");
 }
 
 void exposureEnd() {
@@ -219,11 +201,8 @@ void exposureEnd() {
   digitalWrite(relay2pin, HIGH);
   exposureRunning = false;
   timer.cancel();
-  // int timeEllapsed = (millis() - exposureStartTime);
-  // Serial.println("stop");
   lcd.setCursor(0, 1);
   lcd.print("Done!  ");
-  // lcd.print(timeEllapsed);
   lcd.print("      ");
   click = false;
 }
@@ -254,18 +233,7 @@ void handleButtonPress() {
   bool switchDown = !digitalRead(pinSwitchDown);
   bool switchUp = !digitalRead(pinSwitchUp);
   bool start = !digitalRead(startButton);
-  // int val = analogRead(analogPin);  // read the input pin
 
-  // valSmooth = (valSmooth * (3) + val * 1) / 4;
-  // mode = 8 - (valSmooth * 9 / 1024);
-  // if (mode != prevMode) {
-  //   // lcd.clear();
-  //   lcd.setCursor(0, 0);
-  //   lcd.print("mode ");
-  //   lcd.print(mode);
-  //   updateModeState();
-  //   prevMode = mode;
-  // }
 
   if (switchDown == true) {
     switchState = 2;
@@ -290,10 +258,6 @@ void handleButtonPress() {
 
   if (switchState != prevSwitchState) {
     stepScale = stepScaleList[switchState];
-
-    // redundant debug code
-    // lcd.setCursor(14, 1);
-    // lcd.print(switchState);
 
     prevSwitchState = switchState;
   }
@@ -345,55 +309,63 @@ void handleButtonPress() {
       updateModeState();
       lastSecondsDown = millis();
     }
-  } else if (mode == 8) {
-    //mode for running multiple timers
-
-
-    if ((start == true) && (start != prevStart) && (modeState[5] > 0) && ((millis() - lastStart) > debounceTime)) {
+      } else if (mode == 8) {
+      //mode for running multiple timers
+  
+      if ((start == true) && (start != prevStart) && (modeState[5] > 0) && ((millis() - lastStart) > debounceTime)) {
+        if (exposureRunning == false) {
+          exposureStart();
+          // Pass function pointer, do not call function
+          timer.in(modeState[5], [](void*) -> bool { exposureStop(); return false; });
+          timer.every(200, [](void*) -> bool { exposureRemaining(); return true; });
+          exposureTimeTotal = modeState[5];
+          lastStart = millis();
+        } else {
+          timer.cancel(); // Cancel all tasks on this timer instance
+          exposureStop();
+          lastStart = millis();
+        }
+      }
+      if ((secondsDown == true) && (secondsDown != prevSecondsDown) && (modeState[6] > 0) && ((millis() - lastSecondsDown) > debounceTime)) {
+        if (timer1Running == false) {
+          timer_mode8_1.in(modeState[6], [](void*) -> bool {
+             exposureEnd();
+             timer1Running = false;
+             return false;
+          });
+          timer1Running = true;
+        } else {
+          timer_mode8_1.cancel();
+          timer1Running = false;
+        }
+      }
+      if ((secondsUp == true) && (secondsUp != prevSecondsUp) && (modeState[7] > 0) && ((millis() - lastSecondsUp) > debounceTime)) {
+        if (timer2Running == false) {
+          timer_mode8_2.in(modeState[7], [](void*) -> bool {
+             exposureEnd();
+             timer2Running = false;
+             return false;
+          });
+          timer2Running = true;
+        } else {
+          timer_mode8_2.cancel();
+          timer2Running = false;
+        }
+      }
+    }  //starting the timer
+  if (mode != 8) {
+    if ((start == true) && (start != prevStart) && (modeState[mode] > 0) && ((millis() - lastStart) > debounceTime)) {
       if (exposureRunning == false) {
         exposureStart();
-        timer.in(modeState[5], exposureStop())
-        timer.every(200, exposureRemaining);
-        exposureTimeTotal = modeState[5];
+        timer.in(modeState[mode], [](void*) -> bool { exposureEnd(); return false; });
+        timer.every(200, [](void*) -> bool { exposureRemaining(); return true; });
+        exposureTimeTotal = modeState[mode];
         lastStart = millis();
       } else {
-        timer.cancel(exposure);
+        timer.cancel();
         exposureStop();
         lastStart = millis();
       }
-    }
-    if ((secondsDown == true) && (secondsDown != prevSecondsDown) && (modeState[6] > 0) && ((millis() - lastSecondsDown) > debounceTime)) {
-      if (timer1Running == false) {
-        auto timer1 = timer.in(modeState[6], exposureEnd);
-        timer1Running = true;
-      } else {
-        timer.cancel(timer1);
-        timer1Running = false;
-      }
-    }
-    if ((secondsUp == true) && (secondsUp != prevSecondsUp) && (modeState[7] > 0) && ((millis() - lastSecondsUp) > debounceTime)) {
-      if (timer1Running == false) {
-        auto timer2 = timer.in(modeState[7], exposureEnd);
-        timer1Running = true;
-      } else {
-        timer.cancel(timer2);
-        timer1Running = false;
-      }
-    }
-  }
-  //starting the timer
-
-  if ((start == true) && (start != prevStart) && (modeState[mode] > 0) && ((millis() - lastStart) > debounceTime)) {
-    if (exposureRunning == false) {
-      exposureStart();
-      timer.in(modeState[mode], exposureEnd);
-      timer.every(200, exposureRemaining);
-      exposureTimeTotal = modeState[mode];
-      lastStart = millis();
-    } else {
-      timer.cancel();
-      exposureStop();
-      lastStart = millis();
     }
   }
 
